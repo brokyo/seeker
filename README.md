@@ -24,5 +24,6 @@ This mod is intended to lift some of that burden. As a mod, it runs in parallel 
 - [If you don't already have it] Install [n.b](https://llllllll.co/t/n-b-et-al-v0-1/60374)
 - Install this mod with `;install https://github.com/brokyo/seeker`
 - Enable the mod [following the instructions on Monome's site](https://monome.org/docs/norns/mods/)
+- Set the tuning to match the mode you're working in in `Seeker > Tuning`
+- Enter the associated `Seeker > Arpeggiator n` menu in `Params`to pick a voice and configure the arpeggiation
 - Plug any clock source into one of the Crow's input jacks
-- Enter the associated `Seeker > Arpeggiator n` menu in `Params`to configure

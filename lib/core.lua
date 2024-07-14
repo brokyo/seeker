@@ -152,10 +152,10 @@ local function advance_arp(idx)
       player:note_on(note, velocity)
     elseif duration_mode == 2 then
       local duration = params:get("trigger_duration_" .. idx) / 100
-      player:note_on(note, velocity, duration)
+      player:play_note(note, velocity, duration)
     elseif duration_mode == 3 then
       local duration = get_weighted_random_duration(idx)
-      player:note_on(note, velocity, duration)
+      player:play_note(note, velocity, duration)
     end
   end
 
