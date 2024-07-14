@@ -99,6 +99,30 @@ function index_to_velocity(table, index, arp_idx)
   return velocity / 100
 end
 
+function get_weighted_random_duration(arp_idx)
+  local durations = {
+    {value = 0.125, chance = params:get("dice_duration_eighth_" .. arp_idx)},
+    {value = 0.25, chance = params:get("dice_duration_quarter_" .. arp_idx)},
+    {value = 0.5, chance = params:get("dice_duration_half_" .. arp_idx)},
+    {value = 1.0, chance = params:get("dice_duration_whole_" .. arp_idx)}
+  }
+
+  local total_chance = 0
+  for _, duration in ipairs(durations) do
+    total_chance = total_chance + duration.chance
+  end
+
+  local random_value = math.random() * total_chance
+  local cumulative_chance = 0
+
+  for _, duration in ipairs(durations) do
+    cumulative_chance = cumulative_chance + duration.chance
+    if random_value <= cumulative_chance then
+      return duration.value
+    end
+  end
+end
+
 local function advance_arp(idx)
   -- Advance index according to arp rules
   local current_step = arp[idx].current_step
@@ -118,8 +142,22 @@ local function advance_arp(idx)
     velocity = velocity * (1 + (math.random() * 0.14 - 0.07))
   end
 
-  -- Play it
-  player:note_on(note, velocity)
+  local duration_mode = params:get("duration_mode_" .. idx)
+
+  local probability = params:get("probability_" .. idx) / 100
+
+  if math.random() <= probability then
+    if duration_mode == 1 then
+      -- Play it
+      player:note_on(note, velocity)
+    elseif duration_mode == 2 then
+      local duration = params:get("trigger_duration_" .. idx) / 100
+      player:note_on(note, velocity, duration)
+    elseif duration_mode == 3 then
+      local duration = get_weighted_random_duration(idx)
+      player:note_on(note, velocity, duration)
+    end
+  end
 
   -- Calculate next step based on style
   local next_step
@@ -152,14 +190,6 @@ end
 
 function script_api:nb_setup()
     nb:init()
-
-    -- nb:add_param("nb_voice_options", "voice options")
-    -- local voice_lookup = params:lookup_param("nb_voice_options")
-    -- for i, option in ipairs(voice_lookup.options) do
-    --     nb_voices[i] = option
-    -- end  
-    -- -- nb:add_player_params()
-    -- params:hide('nb_voice_options')
 end
 
 function script_api:apply_params()
@@ -170,12 +200,14 @@ function script_api:apply_params()
   params:add_option("seeker_root", "Root Note", root_note_table, 1)
 
   for arp_idx = 1, 2 do
-    params:add_group("Arpeggiator " .. arp_idx, 17)
+    params:add_group("Arpeggiator " .. arp_idx, 24)
+    -- Style Params
     params:add_separator("arp_style_header" .. arp_idx, "Style")
-    -- params:add_option("seeker_voice_" .. arp_idx, "Voice", nb_voices, 1)
     nb:add_param("seeker_voice_" .. arp_idx, "NB Voice")
     params:add_option("arp_style_" .. arp_idx, "Style", arpeggiator_styles, 1)
     params:add_number("arp_step_" .. arp_idx, "Step", 1, 4, 1)
+
+    -- Chord Params
     params:add_separator("arp_chord_header" .. arp_idx, "Chord")
     params:add_option("chord_root_note_" .. arp_idx, "Chord Root Note", chord_roots.name, 1)
     params:set_action('chord_root_note_' .. arp_idx, function(param)
@@ -202,14 +234,51 @@ function script_api:apply_params()
     params:set_action('octave_range_' .. arp_idx, function(param)
       generate_chord(arp_idx)
     end)
+
+    -- Expresion Params
     params:add_separator("arp_expression_header" .. arp_idx, "Expression")
     params:add_control("probability_" .. arp_idx, "Probability", controlspec.new(0, 100, 'lin', 1, 100, '%'))
     params:add_option("velocity_curve_" .. arp_idx, "Velocity Curve", {"Alternate", "Ramp Up", "Ramp Down", "Sin", "Flat"}, 1)
     params:add_number("max_velocity_" .. arp_idx, "Velocity Max", 1, 100, 70)
     params:add_number("min_velocity_" .. arp_idx, "Velocity Mix", 1, 100, 40)
     params:add_option("humanize_" .. arp_idx, "Humanize", {"Off", "On"}, 1)
-  end
 
+    -- Rhythm Params
+    params:add_separator("arp_rhythm_header" .. arp_idx, "Rhytm")
+    params:add_option("duration_mode_" .. arp_idx, "Duration Control", {"Gate Length", "Trigger", "Dice"}, 1)
+    params:set_action('duration_mode_' .. arp_idx, function(param)
+      if param == 1 then
+        params:hide("trigger_duration_" .. arp_idx)
+        params:hide("dice_duration_eighth_" .. arp_idx)
+        params:hide("dice_duration_quarter_" .. arp_idx)
+        params:hide("dice_duration_half_" .. arp_idx)
+        params:hide("dice_duration_whole_" .. arp_idx)
+      elseif param == 2 then
+        params:show("trigger_duration_" .. arp_idx)
+        params:hide("dice_duration_eighth_" .. arp_idx)
+        params:hide("dice_duration_quarter_" .. arp_idx)
+        params:hide("dice_duration_half_" .. arp_idx)
+        params:hide("dice_duration_whole_" .. arp_idx)
+      elseif param == 3 then
+        params:hide("trigger_duration_" .. arp_idx)
+        params:show("dice_duration_eighth_" .. arp_idx)
+        params:show("dice_duration_quarter_" .. arp_idx)
+        params:show("dice_duration_half_" .. arp_idx)
+        params:show("dice_duration_whole_" .. arp_idx)
+       end
+
+       _menu.rebuild_params()
+    end)
+    params:add_number("trigger_duration_" .. arp_idx, "Play Duration", 0, 100, 50)
+    params:add_number("dice_duration_eighth_" .. arp_idx, "1/8 Note Chance", 0, 10, 5)
+    params:add_number("dice_duration_quarter_" .. arp_idx, "1/4 Note Chance", 0, 10, 5)
+    params:add_number("dice_duration_half_" .. arp_idx, "1/2 Note Chance", 0, 10, 5)
+    params:add_number("dice_duration_whole_" .. arp_idx, "Whole Note Chance", 0, 10, 5)    
+
+    params:set("duration_mode_" .. arp_idx, 1)
+    params:bang()
+    _menu.rebuild_params()  
+  end
   nb:add_player_params()
 end
 
@@ -217,8 +286,11 @@ function arp_handler_1(v)
   if v then
     advance_arp(1)
   elseif not v then
-    local player = params:lookup_param("seeker_voice_1"):get_player()
-    player:note_off(arp[1].chord[arp[1].current_step])
+    -- Duration Mode 1 waits for the end of a gate signal
+    if params:get("duration_mode_1") == 1 then
+      local player = params:lookup_param("seeker_voice_1"):get_player()
+      player:note_off(arp[1].chord[arp[1].current_step])
+    end
   end
 end
 
@@ -226,17 +298,19 @@ function arp_handler_2(v)
   if v then
     advance_arp(2)
   elseif not v then
-    local player = params:lookup_param("seeker_voice_2"):get_player()
-    player:note_off(arp[2].chord[arp[2].current_step])
+    -- Duration Mode 1 waits for the end of a gate signal
+    if params:get("duration_mode_2") == 1 then
+      local player = params:lookup_param("seeker_voice_2"):get_player()
+      player:note_off(arp[2].chord[arp[2].current_step])
+    end
   end
 end
 
 function script_api:setup_crow()
-  -- TODO: Catch falling action as well. Use it to send player:note_off()
   crow.input[1].change = arp_handler_1
   crow.input[1].mode("change", 1.0, 0.1, "both")
   crow.input[2].change = arp_handler_2
-  crow.input[2].mode("change", 1.0, 0.1, "rising")
+  crow.input[2].mode("change", 1.0, 0.1, "both")
 end
 
 return script_api
