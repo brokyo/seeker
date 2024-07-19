@@ -33,28 +33,56 @@ for i = 1, #musicutil.SCALES do
 end
 
 local chord_roots = {
-    number = musicutil.generate_scale(60, 'Major'),
+    number = musicutil.generate_scale(0, 'Major'),
     name = {}
 }
 chord_roots.name = musicutil.note_nums_to_names(chord_roots.number)
 
-function update_chord_roots()
-    chord_roots = musicutil.generate_scale(params:get("seeker_root"), params:get("seeker_scale"), 1)
+function update_chord_options()
+  -- NB: Subtract one from seeker_key to deal with 0 indexing
+  local seeker_key = params:get("seeker_key") - 1
+  local seeker_scale = params:string("seeker_scale")
+  -- print("New Key: " .. musicutil.note_num_to_name (seeker_key) .. ' ' .. seeker_scale)
+
+  chord_roots.number = musicutil.generate_scale(seeker_key, seeker_scale, 1)
+  chord_roots.name = musicutil.note_nums_to_names(chord_roots.number)
+
+  -- tab.print(chord_roots.number)
+  -- tab.print(chord_roots.name)
+
+  
+  for arp_idx = 1, 2 do
+    local chord_root_notes = params:lookup_param('chord_root_note_' .. arp_idx)
+    -- Set new in-scale note options
+    chord_root_notes.options = chord_roots.number
+
+    -- And reset note to root
+    local new_root = chord_roots.number[1]
+
+    params:set('chord_root_note_' .. arp_idx, new_root, 0)
+
+    local new_chord_types = musicutil.chord_types_for_note(new_root, seeker_key, seeker_scale)
+    local chord_types = params:lookup_param('chord_type_' .. arp_idx)
+    chord_types.options = new_chord_types
+    chord_types.count = #new_chord_types
+  end
+  _menu.rebuild_params()
 end
 
 local function generate_chord(arp_idx)
-  local chord_root = params:get("chord_root_note_" .. arp_idx)
-  chord_root = chord_root - 1
+  local chord_root = params:string("chord_root_note_" .. arp_idx)
+  chord_root = chord_root
 
-  local chord_root_octave = params:get("chord_root_oct_" .. arp_idx)
+  local chord_root_octave = params:string("chord_root_oct_" .. arp_idx)
   chord_root = chord_root + (chord_root_octave * 12)
 
-  local chord_type = params:get("chord_type_" .. arp_idx)
-  local chord_inversion = params:get("chord_inversion_" .. arp_idx)
+  local chord_type = params:string("chord_type_" .. arp_idx)
+
+  local chord_inversion = params:string("chord_inversion_" .. arp_idx)
 
   local new_chord = musicutil.generate_chord(chord_root, chord_type, chord_inversion)
 
-  local octave_range = params:get("octave_range_" .. arp_idx)
+  local octave_range = params:string("octave_range_" .. arp_idx)
 
   local extended_chord = {}
   for i = 1, octave_range do
@@ -62,6 +90,8 @@ local function generate_chord(arp_idx)
       table.insert(extended_chord, note + (i * 12))
     end
   end
+
+  tab.print(extended_chord)
   new_chord = extended_chord
 
   arp[arp_idx].chord = new_chord
@@ -211,8 +241,14 @@ function script_api:add_activation_switch()
   -- TODO: Ideally, all of these would be hidden by default. But when I put them in a script they never show up. 
   params:add_group("Tuning", 2)
   params:add_option("seeker_scale", "Scale", scale_names, 1)
-  params:add_option("seeker_root", "Root Note", root_note_table, 1)
-
+  params:set_action("seeker_scale", function(param)
+    update_chord_options()
+  end)
+  params:add_option("seeker_key", "Key", root_note_table, 1)
+  params:set_action("seeker_key", function(param)
+    update_chord_options()
+  end)
+ 
   for arp_idx = 1, 2 do
     -- Arpeggiator Params
     params:add_group("Arpeggiator " .. arp_idx, 35)
@@ -224,7 +260,18 @@ function script_api:add_activation_switch()
 
     -- Chord Params
     params:add_separator("arp_chord_header" .. arp_idx, "Chord")
-    params:add_option("chord_root_note_" .. arp_idx, "Chord Root Note", chord_roots.name, 1)
+    -- params:add{
+    --   type = "option",
+    --   id = "chord_root_note_" .. arp_idx,
+    --   name = "Chord Root Note",
+    --   options = chord_roots.number,
+    --   default = 1,
+    --   formatter = function(param) 
+    --     local note_name = musicutil.note_num_to_name(param)
+    --     return note_name
+    --   end
+    -- }
+    params:add_option("chord_root_note_" .. arp_idx, "Chord Root Note", chord_roots.number, 1)
     params:set_action('chord_root_note_' .. arp_idx, function(param)
       generate_chord(arp_idx)
     end)
@@ -235,8 +282,8 @@ function script_api:add_activation_switch()
     params:add_option("chord_type_" .. arp_idx, "Chord Type",
       musicutil.chord_types_for_note(
           chord_roots.number[params:get('chord_root_note_' .. arp_idx)],
-          (params:get('seeker_root') - 1) + 5 * 12, 
-          scale_names[params:get('seeker_scale')]
+          params:get('seeker_key') - 1, 
+          params:string('seeker_scale')
       ))
     params:set_action('chord_type_' .. arp_idx, function(param)
       generate_chord(arp_idx)
@@ -345,7 +392,7 @@ function script_api:add_activation_switch()
     end)
 
     params:set("duration_mode_" .. arp_idx, 1)
-    params:bang()
+    -- params:bang()
 
     params:hide("sequenced_param_" .. arp_idx)
     params:hide("pulses_per_step_" .. arp_idx)
