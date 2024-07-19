@@ -7,12 +7,18 @@ local arp = {
   {
     chord = {},
     direction = 1,
-    current_step = 1
+    current_step = 1,
+    paramquencer_active = false,
+    paramquencer_current_pulse = 0,
+    paramquencer_current_step = 0 
   },
   {
     chord = {},
     direction = 1,
-    current_step = 1
+    current_step = 1,
+    paramquencer_active = false,
+    paramquencer_current_pulse = 0,
+    paramquencer_current_step = 0 
   }
 }
 
@@ -192,15 +198,24 @@ function script_api:nb_setup()
     nb:init()
 end
 
-function script_api:apply_params()
+function script_api:add_activation_switch()
   params:add_separator("seeker-title", "Seeker")
+  params:add_trigger("seeker_crow_focus", "=== K3 to Activate Seeker ===", "momentary", 0)
 
+  params:set_action("seeker_crow_focus", function(param)
+    script_api:setup_crow()
+    params:hide("seeker_crow_focus")
+    _menu.rebuild_params()  
+  end)
+
+  -- TODO: Ideally, all of these would be hidden by default. But when I put them in a script they never show up. 
   params:add_group("Tuning", 2)
   params:add_option("seeker_scale", "Scale", scale_names, 1)
   params:add_option("seeker_root", "Root Note", root_note_table, 1)
 
   for arp_idx = 1, 2 do
-    params:add_group("Arpeggiator " .. arp_idx, 24)
+    -- Arpeggiator Params
+    params:add_group("Arpeggiator " .. arp_idx, 35)
     -- Style Params
     params:add_separator("arp_style_header" .. arp_idx, "Style")
     nb:add_param("seeker_voice_" .. arp_idx, "NB Voice")
@@ -265,9 +280,9 @@ function script_api:apply_params()
         params:show("dice_duration_quarter_" .. arp_idx)
         params:show("dice_duration_half_" .. arp_idx)
         params:show("dice_duration_whole_" .. arp_idx)
-       end
+      end
 
-       _menu.rebuild_params()
+      _menu.rebuild_params()
     end)
     params:add_number("trigger_duration_" .. arp_idx, "Play Duration", 0, 100, 50)
     params:add_number("dice_duration_eighth_" .. arp_idx, "1/8 Note Chance", 0, 10, 5)
@@ -275,18 +290,85 @@ function script_api:apply_params()
     params:add_number("dice_duration_half_" .. arp_idx, "1/2 Note Chance", 0, 10, 5)
     params:add_number("dice_duration_whole_" .. arp_idx, "Whole Note Chance", 0, 10, 5)    
 
+    params:add_separator("paramquencer_" .. arp_idx, "Paramquencer [Alpha]")
+    params:add_binary("paramquencer_toggle_" .. arp_idx, "Enable Paramquencer", "toggle", 0)
+
+    -- TODO: This is brittle hack to be addressed when I'm back from vacation.
+    -- We're duplicating the param list in order to deal with dynamic IDs.
+    -- SEE:get_sequenced_params()
+    local available_params = {
+      'arp_style_' .. arp_idx, 
+      'arp_step_' .. arp_idx, 
+      'chord_root_note_' .. arp_idx, 
+      'chord_root_oct_' .. arp_idx, 
+      'chord_type_' .. arp_idx, 
+      'chord_inversion_' .. arp_idx, 
+      'octave_range_' .. arp_idx 
+    }
+    params:add_option("sequenced_param_" .. arp_idx, "Param", available_params, 1)
+    params:add_number("pulses_per_step_" ..arp_idx, "Pulses Per Step", 1, 64, 12)
+    params:add_number("step_count_" .. arp_idx, "Step Count", 1, 6, 0)
+    params:add_number("step_1_arp_" .. arp_idx, "Step 1:", 1, 12, 1)        
+    params:add_number("step_2_arp_" .. arp_idx, "Step 2:", 1, 12, 1)        
+    params:add_number("step_3_arp_" .. arp_idx, "Step 3:", 1, 12, 1)        
+    params:add_number("step_4_arp_" .. arp_idx, "Step 4:", 1, 12, 1)        
+    params:add_number("step_5_arp_" .. arp_idx, "Step 5:", 1, 12, 1)        
+    params:add_number("step_6_arp_" .. arp_idx, "Step 6:", 1, 12, 1)   
+    params:set_action("step_count_" .. arp_idx, function(step_length)
+      for i = 1, 6 do
+        if i <= step_length then
+          params:show("step_" .. i .. "_arp_" .. arp_idx)
+        else
+          params:hide("step_" .. i .. "_arp_" .. arp_idx)
+        end
+      end
+    _menu.rebuild_params()
+    end)  
+
+    params:set_action("paramquencer_toggle_" .. arp_idx, function(active)
+      arp[arp_idx].paramquencer_active = true
+      
+      if active == 1 then
+        params:show("sequenced_param_" .. arp_idx)
+        params:show("pulses_per_step_" .. arp_idx)
+        params:show("step_count_" .. arp_idx)
+      else
+        params:hide("sequenced_param_" .. arp_idx)
+        params:hide("pulses_per_step_" .. arp_idx)
+        params:hide("step_count_" .. arp_idx)
+        for i = 1, 6 do
+          params:hide("step_" .. i .. "_arp_" .. arp_idx)
+        end
+      end
+      _menu.rebuild_params()
+    end)
+
     params:set("duration_mode_" .. arp_idx, 1)
     params:bang()
+
+    params:hide("sequenced_param_" .. arp_idx)
+    params:hide("pulses_per_step_" .. arp_idx)
+    params:hide("step_count_" .. arp_idx)
+    for i = 1, 6 do
+      params:hide("step_" .. i .. "_arp_" .. arp_idx)
+    end
     _menu.rebuild_params()  
-  end
+
+    end
+
   nb:add_player_params()
 end
 
-function arp_handler_1(v)
-  if v then
+function arp_handler_1(rise)
+  -- Advance the arp
+  if rise then
     advance_arp(1)
-  elseif not v then
-    -- Duration Mode 1 waits for the end of a gate signal
+    -- If paramquencer is active, iterate the pulse count
+    if arp[1].paramquencer_active then
+      increment_paramquencer_step(1)
+    end
+  -- If we're set to the gate length duration mode, close the voice when the fall comes in
+  elseif not rise then
     if params:get("duration_mode_1") == 1 then
       local player = params:lookup_param("seeker_voice_1"):get_player()
       player:note_off(arp[1].chord[arp[1].current_step])
@@ -294,11 +376,16 @@ function arp_handler_1(v)
   end
 end
 
-function arp_handler_2(v)
-  if v then
+function arp_handler_2(rise)
+  -- Advance the arp
+  if rise then
     advance_arp(2)
-  elseif not v then
-    -- Duration Mode 1 waits for the end of a gate signal
+    -- If paramquencer is active, iterate the pulse count
+    if arp[2].paramquencer_active then
+      increment_paramquencer_step(2)
+    end
+  -- If we're set to the gate length duration mode, close the voice when the fall comes in
+  elseif not rise then
     if params:get("duration_mode_2") == 1 then
       local player = params:lookup_param("seeker_voice_2"):get_player()
       player:note_off(arp[2].chord[arp[2].current_step])
@@ -306,9 +393,44 @@ function arp_handler_2(v)
   end
 end
 
+function get_sequenced_param(arp_idx)
+
+  local selected_param_index = params:get('sequenced_param_' .. arp_idx)
+
+    -- Identify all the params that can be sequenced
+  local available_params = {
+    'arp_style_' .. arp_idx, 
+    'arp_step_' .. arp_idx, 
+    'chord_root_note_' .. arp_idx, 
+    'chord_root_oct_' .. arp_idx, 
+    'chord_type_' .. arp_idx, 
+    'chord_inversion_' .. arp_idx, 
+    'octave_range_' .. arp_idx 
+  }
+
+  return available_params[selected_param_index]
+end
+
+function increment_paramquencer_step(arp_idx)
+  local steps_per_pulse = params:get("pulses_per_step_" .. arp_idx)
+  
+  arp[arp_idx].paramquencer_current_pulse = (arp[arp_idx].paramquencer_current_pulse % steps_per_pulse + 1)
+  if arp[arp_idx].paramquencer_current_pulse == 1 and params:get("step_count_" .. arp_idx) > 0 then
+    arp[arp_idx].paramquencer_current_step = (arp[arp_idx].paramquencer_current_step % params:get("step_count_" .. arp_idx)) + 1
+
+    local next_step_value = params:get("step_" .. arp[arp_idx].paramquencer_current_step .. "_arp_" .. arp_idx)
+    local param_to_update = get_sequenced_param(arp_idx)
+    params:set(param_to_update, next_step_value)
+    _menu.rebuild_params()
+  end
+
+end
+
 function script_api:setup_crow()
+  print("Seeker: Crow Listening")
   crow.input[1].change = arp_handler_1
   crow.input[1].mode("change", 1.0, 0.1, "both")
+
   crow.input[2].change = arp_handler_2
   crow.input[2].mode("change", 1.0, 0.1, "both")
 end
