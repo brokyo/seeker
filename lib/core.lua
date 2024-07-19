@@ -297,6 +297,7 @@ function script_api:add_activation_switch()
     -- We're duplicating the param list in order to deal with dynamic IDs.
     -- SEE:get_sequenced_params()
     local available_params = {
+      'seeker_voice_' .. arp_idx,
       'arp_style_' .. arp_idx, 
       'arp_step_' .. arp_idx, 
       'chord_root_note_' .. arp_idx, 
@@ -308,12 +309,12 @@ function script_api:add_activation_switch()
     params:add_option("sequenced_param_" .. arp_idx, "Param", available_params, 1)
     params:add_number("pulses_per_step_" ..arp_idx, "Pulses Per Step", 1, 64, 12)
     params:add_number("step_count_" .. arp_idx, "Step Count", 1, 6, 0)
-    params:add_number("step_1_arp_" .. arp_idx, "Step 1:", 1, 12, 1)        
-    params:add_number("step_2_arp_" .. arp_idx, "Step 2:", 1, 12, 1)        
-    params:add_number("step_3_arp_" .. arp_idx, "Step 3:", 1, 12, 1)        
-    params:add_number("step_4_arp_" .. arp_idx, "Step 4:", 1, 12, 1)        
-    params:add_number("step_5_arp_" .. arp_idx, "Step 5:", 1, 12, 1)        
-    params:add_number("step_6_arp_" .. arp_idx, "Step 6:", 1, 12, 1)   
+    params:add_number("step_1_arp_" .. arp_idx, "Step 1:", 1, 36, 1)        
+    params:add_number("step_2_arp_" .. arp_idx, "Step 2:", 1, 36, 1)        
+    params:add_number("step_3_arp_" .. arp_idx, "Step 3:", 1, 36, 1)        
+    params:add_number("step_4_arp_" .. arp_idx, "Step 4:", 1, 36, 1)        
+    params:add_number("step_5_arp_" .. arp_idx, "Step 5:", 1, 36, 1)        
+    params:add_number("step_6_arp_" .. arp_idx, "Step 6:", 1, 36, 1)   
     params:set_action("step_count_" .. arp_idx, function(step_length)
       for i = 1, 6 do
         if i <= step_length then
@@ -399,6 +400,7 @@ function get_sequenced_param(arp_idx)
 
     -- Identify all the params that can be sequenced
   local available_params = {
+    'seeker_voice_' .. arp_idx,
     'arp_style_' .. arp_idx, 
     'arp_step_' .. arp_idx, 
     'chord_root_note_' .. arp_idx, 
