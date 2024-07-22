@@ -54,10 +54,10 @@ function update_chord_options()
   for arp_idx = 1, 2 do
     local chord_root_notes = params:lookup_param('chord_root_note_' .. arp_idx)
     -- Set new in-scale note options
-    chord_root_notes.options = chord_roots.number
+    chord_root_notes.options = chord_roots.name
 
     -- And reset note to root
-    local new_root = chord_roots.number[1]
+    local new_root = chord_roots.name[1]
 
     params:set('chord_root_note_' .. arp_idx, new_root, 0)
 
@@ -70,8 +70,9 @@ function update_chord_options()
 end
 
 local function generate_chord(arp_idx)
-  local chord_root = params:string("chord_root_note_" .. arp_idx)
-  chord_root = chord_root
+  local chord_root_index = params:get("chord_root_note_" .. arp_idx)
+  chord_root = chord_roots.number[chord_root_index]
+  print(chord_root)
 
   local chord_root_octave = params:string("chord_root_oct_" .. arp_idx)
   chord_root = chord_root + (chord_root_octave * 12)
@@ -271,7 +272,7 @@ function script_api:add_activation_switch()
     --     return note_name
     --   end
     -- }
-    params:add_option("chord_root_note_" .. arp_idx, "Chord Root Note", chord_roots.number, 1)
+    params:add_option("chord_root_note_" .. arp_idx, "Chord Root Note", chord_roots.name, 1)
     params:set_action('chord_root_note_' .. arp_idx, function(param)
       generate_chord(arp_idx)
     end)
