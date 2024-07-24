@@ -9,16 +9,16 @@ local arp = {
     direction = 1,
     current_step = 1,
     paramquencer_active = false,
-    paramquencer_current_pulse = 0,
-    paramquencer_current_step = 0 
+    paramquencer_current_pulse = {0, 0, 0, 0},
+    paramquencer_current_step = {0, 0, 0, 0} 
   },
   {
     chord = {},
     direction = 1,
     current_step = 1,
     paramquencer_active = false,
-    paramquencer_current_pulse = 0,
-    paramquencer_current_step = 0 
+    paramquencer_current_pulse = {0, 0, 0, 0},
+    paramquencer_current_step = {0, 0, 0, 0} 
   }
 }
 
@@ -71,17 +71,16 @@ end
 
 local function generate_chord(arp_idx)
   local chord_root_index = params:get("chord_root_note_" .. arp_idx)
-  chord_root = chord_roots.number[chord_root_index]
-  print(chord_root)
+  chord_root_midi = chord_roots.number[chord_root_index]
 
   local chord_root_octave = params:string("chord_root_oct_" .. arp_idx)
-  chord_root = chord_root + (chord_root_octave * 12)
+  chord_root_midi = chord_root_midi + (chord_root_octave * 12)
 
   local chord_type = params:string("chord_type_" .. arp_idx)
 
   local chord_inversion = params:string("chord_inversion_" .. arp_idx)
 
-  local new_chord = musicutil.generate_chord(chord_root, chord_type, chord_inversion)
+  local new_chord = musicutil.generate_chord(chord_root_midi, chord_type, chord_inversion)
 
   local octave_range = params:string("octave_range_" .. arp_idx)
 
@@ -92,7 +91,6 @@ local function generate_chord(arp_idx)
     end
   end
 
-  tab.print(extended_chord)
   new_chord = extended_chord
 
   arp[arp_idx].chord = new_chord
@@ -174,6 +172,10 @@ local function advance_arp(idx)
 
   -- Get Velocity
   local velocity = index_to_velocity(chord, current_step, idx)
+  -- TODO: This catches an error `attempt to perform arithmetic on a nil value (local 'velocity')` whose root I cannot find
+  if not velocity then
+    velocity = params:get("max_velocity_" .. idx)
+  end
 
   if params:get("humanize_" .. idx) then
     velocity = velocity * (1 + (math.random() * 0.14 - 0.07))
@@ -252,7 +254,7 @@ function script_api:add_activation_switch()
  
   for arp_idx = 1, 2 do
     -- Arpeggiator Params
-    params:add_group("Arpeggiator " .. arp_idx, 35)
+    params:add_group("Arpeggiator " .. arp_idx, 64)
     -- Style Params
     params:add_separator("arp_style_header" .. arp_idx, "Style")
     nb:add_param("seeker_voice_" .. arp_idx, "NB Voice")
@@ -261,17 +263,6 @@ function script_api:add_activation_switch()
 
     -- Chord Params
     params:add_separator("arp_chord_header" .. arp_idx, "Chord")
-    -- params:add{
-    --   type = "option",
-    --   id = "chord_root_note_" .. arp_idx,
-    --   name = "Chord Root Note",
-    --   options = chord_roots.number,
-    --   default = 1,
-    --   formatter = function(param) 
-    --     local note_name = musicutil.note_num_to_name(param)
-    --     return note_name
-    --   end
-    -- }
     params:add_option("chord_root_note_" .. arp_idx, "Chord Root Note", chord_roots.name, 1)
     params:set_action('chord_root_note_' .. arp_idx, function(param)
       generate_chord(arp_idx)
@@ -354,56 +345,95 @@ function script_api:add_activation_switch()
       'chord_inversion_' .. arp_idx, 
       'octave_range_' .. arp_idx 
     }
-    params:add_option("sequenced_param_" .. arp_idx, "Param", available_params, 1)
-    params:add_number("pulses_per_step_" ..arp_idx, "Pulses Per Step", 1, 64, 12)
-    params:add_number("step_count_" .. arp_idx, "Step Count", 1, 6, 0)
-    params:add_number("step_1_arp_" .. arp_idx, "Step 1:", 1, 36, 1)        
-    params:add_number("step_2_arp_" .. arp_idx, "Step 2:", 1, 36, 1)        
-    params:add_number("step_3_arp_" .. arp_idx, "Step 3:", 1, 36, 1)        
-    params:add_number("step_4_arp_" .. arp_idx, "Step 4:", 1, 36, 1)        
-    params:add_number("step_5_arp_" .. arp_idx, "Step 5:", 1, 36, 1)        
-    params:add_number("step_6_arp_" .. arp_idx, "Step 6:", 1, 36, 1)   
-    params:set_action("step_count_" .. arp_idx, function(step_length)
-      for i = 1, 6 do
-        if i <= step_length then
-          params:show("step_" .. i .. "_arp_" .. arp_idx)
-        else
-          params:hide("step_" .. i .. "_arp_" .. arp_idx)
-        end
-      end
-    _menu.rebuild_params()
-    end)  
+    -- 37 + 1 + 24
 
-    params:set_action("paramquencer_toggle_" .. arp_idx, function(active)
-      arp[arp_idx].paramquencer_active = true
+    -- Create the four Paramquencer lanes
+    params:add_binary("sync_paramquencer_" .. arp_idx, "Sync Paramquencer Lanes", "momentary")
+    params:set_action("sync_paramquencer_" .. arp_idx, function(state)
+      if state == 1 then
+        sync_paramquencer(arp_idx)
+      end
+    end)
+    params:add_number("sequencer_lane_arp_" .. arp_idx, "Lane", 1, 4, 1)
+
+    for lane_idx = 1, 4 do
+      params:add_number("pulses_per_step_lane_" .. lane_idx .. "_arp_" .. arp_idx, "Pulses Per Step", 1, 64, 12)
+      params:add_option("sequenced_param_lane_" .. lane_idx .. "_arp_" .. arp_idx, "Param", available_params, 1)
+      params:add_number("step_count_lane_" .. lane_idx .. "_arp_" .. arp_idx, "Step Count", 1, 6, 0)
       
-      if active == 1 then
-        params:show("sequenced_param_" .. arp_idx)
-        params:show("pulses_per_step_" .. arp_idx)
-        params:show("step_count_" .. arp_idx)
-      else
-        params:hide("sequenced_param_" .. arp_idx)
-        params:hide("pulses_per_step_" .. arp_idx)
-        params:hide("step_count_" .. arp_idx)
-        for i = 1, 6 do
-          params:hide("step_" .. i .. "_arp_" .. arp_idx)
+      for step_idx = 1, 6 do
+        params:add_number("step_" .. step_idx .. "_lane_" .. lane_idx .. "_arp_" .. arp_idx, "Step " .. step_idx, 1, 36, 1)
+      end
+
+      params:set_action("step_count_lane_" .. lane_idx .. "_arp_" .. arp_idx, function(step_length)
+        for step_idx = 1, 6 do
+          if step_idx <= step_length then
+            params:show("step_" .. step_idx .. "_lane_" .. lane_idx .. "_arp_" .. arp_idx)
+          else
+            params:hide("step_" .. step_idx .. "_lane_" .. lane_idx .. "_arp_" .. arp_idx)
+          end
+        end
+        _menu.rebuild_params()
+      end)
+    end
+
+    params:set_action("sequencer_lane_arp_" .. arp_idx, function(selected_lane)
+      for lane_idx = 1, 4 do
+        if lane_idx == selected_lane then
+          params:show("pulses_per_step_lane_" .. lane_idx .. "_arp_" .. arp_idx)
+          params:show("sequenced_param_lane_" .. lane_idx .. "_arp_" .. arp_idx)
+          params:show("step_count_lane_" .. lane_idx .. "_arp_" .. arp_idx)
+
+          for step_idx = 1, params:get("step_count_lane_" .. lane_idx .. "_arp_" .. arp_idx) do
+            params:show("step_" .. step_idx .. "_lane_" .. lane_idx .. "_arp_" .. arp_idx)
+          end
+
+        else
+          params:hide("pulses_per_step_lane_" .. lane_idx .. "_arp_" .. arp_idx)
+          params:hide("sequenced_param_lane_" .. lane_idx .. "_arp_" .. arp_idx)
+          params:hide("step_count_lane_" .. lane_idx .. "_arp_" .. arp_idx)
+          for step_idx = 1, 6 do
+            params:hide("step_" .. step_idx .. "_lane_" .. lane_idx .. "_arp_" .. arp_idx)
+          end
         end
       end
       _menu.rebuild_params()
     end)
 
-    params:set("duration_mode_" .. arp_idx, 1)
-    -- params:bang()
 
-    params:hide("sequenced_param_" .. arp_idx)
-    params:hide("pulses_per_step_" .. arp_idx)
-    params:hide("step_count_" .. arp_idx)
-    for i = 1, 6 do
-      params:hide("step_" .. i .. "_arp_" .. arp_idx)
-    end
-    _menu.rebuild_params()  
+    params:set_action("paramquencer_toggle_" .. arp_idx, function(active)
+      arp[arp_idx].paramquencer_active = true
+      params:show("sync_paramquencer_" .. arp_idx)
+      local default_lane = params:get("sequencer_lane_arp_" .. arp_idx)
+      params:show("sequencer_lane_arp_" .. arp_idx)
+      params:show("pulses_per_step_lane_" .. default_lane .. "_arp_" .. arp_idx)
+      params:show("sequenced_param_lane_" .. default_lane .. "_arp_" .. arp_idx)
+      params:show("step_count_lane_" .. default_lane .. "_arp_" .. arp_idx)
+
+      for step_idx = 1, params:get("step_count_lane_" .. default_lane .. "_arp_" .. arp_idx) do
+        params:show("step_" .. step_idx .. "_lane_" .. default_lane .. "_arp_" .. arp_idx)
+      end
+
+      params:hide("paramquencer_toggle_" .. arp_idx)
+      _menu.rebuild_params()
+    end)
 
     end
+
+  for arp_idx = 1, 2 do    
+    params:hide("sync_paramquencer_" .. arp_idx)
+    params:hide("sequencer_lane_arp_" .. arp_idx)
+    for lane_idx = 1, 4 do
+      params:hide("pulses_per_step_lane_" .. lane_idx .. "_arp_" .. arp_idx)
+      params:hide("sequenced_param_lane_" .. lane_idx .. "_arp_" .. arp_idx)
+      params:hide("step_count_lane_" .. lane_idx .. "_arp_" .. arp_idx)
+      for step_idx = 1, 6 do
+        params:hide("step_" .. step_idx .. "_lane_" .. lane_idx .. "_arp_" .. arp_idx)
+      end
+    end
+ 
+  end
+  _menu.rebuild_params()
 
   nb:add_player_params()
 end
@@ -462,18 +492,36 @@ function get_sequenced_param(arp_idx)
 end
 
 function increment_paramquencer_step(arp_idx)
-  local steps_per_pulse = params:get("pulses_per_step_" .. arp_idx)
-  
-  arp[arp_idx].paramquencer_current_pulse = (arp[arp_idx].paramquencer_current_pulse % steps_per_pulse + 1)
-  if arp[arp_idx].paramquencer_current_pulse == 1 and params:get("step_count_" .. arp_idx) > 0 then
-    arp[arp_idx].paramquencer_current_step = (arp[arp_idx].paramquencer_current_step % params:get("step_count_" .. arp_idx)) + 1
+  for lane_idx = 1, 4 do
+    local step_count = params:get("step_count_lane_" .. lane_idx .. "_arp_" .. arp_idx)
+    if step_count == 0 then
+      return
+    end
 
-    local next_step_value = params:get("step_" .. arp[arp_idx].paramquencer_current_step .. "_arp_" .. arp_idx)
-    local param_to_update = get_sequenced_param(arp_idx)
-    params:set(param_to_update, next_step_value)
-    _menu.rebuild_params()
+    
+    local pulses_per_step = params:get("pulses_per_step_lane_" .. lane_idx .. "_arp_" .. arp_idx)
+    
+    arp[arp_idx].paramquencer_current_pulse[lane_idx] = (arp[arp_idx].paramquencer_current_pulse[lane_idx] % pulses_per_step + 1)
+
+    if arp[arp_idx].paramquencer_current_pulse[lane_idx] == 1 and params:get("step_count_lane_" .. lane_idx .. "_arp_" .. arp_idx) > 0 then
+      arp[arp_idx].paramquencer_current_step[lane_idx] = (arp[arp_idx].paramquencer_current_step[lane_idx] % params:get("step_count_lane_" .. lane_idx .. "_arp_" .. arp_idx)) + 1
+
+      local next_step_value = params:get("step_" .. arp[arp_idx].paramquencer_current_step[lane_idx] .. "_lane_" .. lane_idx .. "_arp_" .. arp_idx)
+      local param_to_update = params:string("sequenced_param_lane_" .. lane_idx .. "_arp_" .. arp_idx)
+
+      print("Change Param: " .. param_to_update .. " Value: " .. next_step_value)
+      params:set(param_to_update, next_step_value)
+      _menu.rebuild_params()
+    end
   end
+end
 
+function sync_paramquencer(arp_idx)
+  for lane_idx = 1, 4 do
+    arp[arp_idx].paramquencer_current_pulse[lane_idx] = 0
+    arp[arp_idx].paramquencer_current_step[lane_idx] = 0
+  end
+  print("Paramquencer for arp " .. arp_idx .. " synced.")
 end
 
 function script_api:setup_crow()
